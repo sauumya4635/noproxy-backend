@@ -22,7 +22,7 @@ public class UserService implements UserDetailsService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    // ✅ Load user for Spring Security
+    // ✅ For Spring Security authentication
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
         com.noproxy.noproxy.model.User user = userRepository.findByEmail(email)
@@ -34,15 +34,20 @@ public class UserService implements UserDetailsService {
                 .build();
     }
 
-    // ✅ Register new user (with imagePath for STUDENT role)
+    // ✅ Register new user — now includes manual ID
     public com.noproxy.noproxy.model.User registerUser(
-            String name, String email, String password, Role role, String imagePath) {
+            Long id, String name, String email, String password, Role role, String imagePath) {
 
         if (userRepository.existsByEmail(email)) {
             throw new RuntimeException("Email already registered!");
         }
 
         com.noproxy.noproxy.model.User newUser = new com.noproxy.noproxy.model.User();
+
+        if (id != null) {
+            newUser.setId(id); // ✅ manually set student/faculty ID
+        }
+
         newUser.setName(name);
         newUser.setEmail(email);
         newUser.setPassword(passwordEncoder.encode(password));

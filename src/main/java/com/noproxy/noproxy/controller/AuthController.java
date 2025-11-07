@@ -1,5 +1,6 @@
 package com.noproxy.noproxy.controller;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -53,22 +54,20 @@ public class AuthController {
         this.jwtUtil = jwtUtil;
     }
 
-    // ✅ Ping endpoint (for testing connectivity)
+    // ✅ Ping endpoint
     @GetMapping("/ping")
     public ResponseEntity<?> ping() {
-        return ResponseEntity.ok(Map.of(
-                "status", "Java backend running!",
-                "port", "8080"
-        ));
+        return ResponseEntity.ok(Map.of("status", "Java backend running!", "port", "5501"));
     }
 
-    // ✅ Register new user with specific exception handling
+    // ✅ Register user (clean error handling)
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest body) {
         try {
             Role role = Role.valueOf(body.getRole().toUpperCase());
 
             User user = userService.registerUser(
+                    body.getId(),
                     body.getName(),
                     body.getEmail(),
                     body.getPassword(),
@@ -88,35 +87,34 @@ public class AuthController {
             return ResponseEntity.ok(response);
 
         } catch (IllegalArgumentException e) {
-            // Invalid role
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Invalid role specified."));
+            // Invalid role string
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid role specified."));
 
         } catch (DataIntegrityViolationException e) {
             // Duplicate email or DB constraint violation
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(Map.of("message", "User already exists or invalid data."));
 
-        } catch (RuntimeException e) { // ✅ includes NullPointerException, IllegalStateException, etc.
-            // Fallback for unexpected runtime errors
+        } catch (RuntimeException e) {
+            // General fallback (any other unchecked exception)
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("message", "Unexpected error during registration: " + e.getMessage()));
+                    .body(Map.of("message", "Unexpected error: " + e.getMessage()));
         }
     }
 
-    // ✅ Login existing user with improved multi-catch
+    // ✅ Login with proper multi-catch
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody AuthRequest loginRequest) {
-        String email = loginRequest.getEmail();
-        String password = loginRequest.getPassword();
-
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(email, password)
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getEmail(),
+                            loginRequest.getPassword()
+                    )
             );
 
-            UserDetails userDetails = userService.loadUserByUsername(email);
-            User user = userService.getUserByEmail(email).orElseThrow();
+            UserDetails userDetails = userService.loadUserByUsername(loginRequest.getEmail());
+            User user = userService.getUserByEmail(loginRequest.getEmail()).orElseThrow();
 
             String token = jwtUtil.generateToken(
                     userDetails,
@@ -140,17 +138,17 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Invalid email or password."));
 
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | NullPointerException e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("message", "Invalid login request: " + e.getMessage()));
 
-        } catch (RuntimeException e) { // ✅ simplified clean fallback
+        } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", "Unexpected error during login: " + e.getMessage()));
         }
     }
 
-    // ✅ Upload student photo with corrected multi-catch
+    // ✅ Upload student photo (multi-catch for IO-related issues)
     @PostMapping("/upload-photo")
     public ResponseEntity<?> uploadPhoto(@RequestParam("file") MultipartFile file,
                                          @RequestParam("email") String email) {
@@ -164,6 +162,7 @@ public class AuthController {
 
             String cleanName = Objects.requireNonNull(file.getOriginalFilename())
                     .replaceAll("[^a-zA-Z0-9._-]", "_");
+
             Path filePath = Paths.get(UPLOAD_DIR, cleanName).toAbsolutePath();
             file.transferTo(filePath);
 
@@ -176,12 +175,12 @@ public class AuthController {
                     "path", filePath.toString()
             ));
 
-        } catch (java.io.IOException | IllegalStateException | SecurityException e) { 
-            // File system or transfer error
+        } catch (IOException | IllegalStateException | SecurityException e) {
+            // ✅ Multi-catch block handles all file system errors
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", "File upload failed: " + e.getMessage()));
 
-        } catch (RuntimeException e) { // ✅ general runtime fallback
+        } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", "Unexpected error: " + e.getMessage()));
         }
